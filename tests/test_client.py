@@ -141,21 +141,21 @@ async def test_get_members_count_empty_history(api: GhostAdminAPI):
 
 @pytest.mark.asyncio
 async def test_get_mrr(api: GhostAdminAPI):
-    """Test getting MRR data."""
+    """Test getting MRR data returns rounded whole currency units."""
     with aioresponses() as m:
         m.get(
             f"{API_URL}/ghost/api/admin/members/stats/mrr/",
             payload={
                 "data": [
                     {"currency": "usd", "data": [{"value": 10000}, {"value": 12284}]},
-                    {"currency": "eur", "data": [{"value": 5000}]},
+                    {"currency": "eur", "data": [{"value": 5049}]},
                 ]
             },
         )
         async with api:
             mrr = await api.get_mrr()
-        assert mrr["usd"] == 12284
-        assert mrr["eur"] == 5000
+        assert mrr["usd"] == 123  # 12284 cents → $123
+        assert mrr["eur"] == 50  # 5049 cents → €50 (rounded)
 
 
 @pytest.mark.asyncio
@@ -166,6 +166,40 @@ async def test_get_mrr_empty(api: GhostAdminAPI):
         async with api:
             mrr = await api.get_mrr()
         assert mrr == {}
+
+
+# -----------------------------------------------------------------------------
+# ARR
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_arr(api: GhostAdminAPI):
+    """Test getting ARR data returns MRR × 12."""
+    with aioresponses() as m:
+        m.get(
+            f"{API_URL}/ghost/api/admin/members/stats/mrr/",
+            payload={
+                "data": [
+                    {"currency": "usd", "data": [{"value": 10000}]},
+                    {"currency": "eur", "data": [{"value": 5000}]},
+                ]
+            },
+        )
+        async with api:
+            arr = await api.get_arr()
+        assert arr["usd"] == 1200  # 10000 cents → $100 MRR → $1200 ARR
+        assert arr["eur"] == 600  # 5000 cents → €50 MRR → €600 ARR
+
+
+@pytest.mark.asyncio
+async def test_get_arr_empty(api: GhostAdminAPI):
+    """Test getting ARR with no MRR data."""
+    with aioresponses() as m:
+        m.get(f"{API_URL}/ghost/api/admin/members/stats/mrr/", payload={"data": []})
+        async with api:
+            arr = await api.get_arr()
+        assert arr == {}
 
 
 # -----------------------------------------------------------------------------

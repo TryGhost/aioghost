@@ -252,8 +252,8 @@ class GhostAdminAPI:
         """Get MRR (Monthly Recurring Revenue) data.
 
         Returns:
-            Dict with currency keys and MRR values in cents.
-            E.g., {"usd": 12284, "eur": 5000}
+            Dict with currency keys and MRR values as rounded whole currency units.
+            E.g., {"usd": 123, "eur": 50}
         """
         data = await self._get("/ghost/api/admin/members/stats/mrr/")
 
@@ -263,9 +263,21 @@ class GhostAdminAPI:
             values = currency_data.get("data", [])
             if values:
                 latest = values[-1]
-                result[currency] = latest.get("value", 0)
+                result[currency] = round(latest.get("value", 0) / 100)
 
         return result
+
+    async def get_arr(self) -> dict[str, int]:
+        """Get ARR (Annual Recurring Revenue) data.
+
+        Fetches MRR from the Ghost API and multiplies by 12.
+
+        Returns:
+            Dict with currency keys and ARR values as rounded whole currency units.
+            E.g., {"usd": 1476, "eur": 600}
+        """
+        mrr = await self.get_mrr()
+        return {currency: value * 12 for currency, value in mrr.items()}
 
     # -------------------------------------------------------------------------
     # Newsletters
