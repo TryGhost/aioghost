@@ -230,7 +230,7 @@ class GhostAdminAPI:
         """Get member counts from stats endpoint.
 
         Returns:
-            Dict with 'total', 'paid', 'free', 'comped' counts.
+            Dict with 'total', 'paid', 'free', 'comped', 'gift' counts.
         """
         data = await self._get("/ghost/api/admin/members/stats/count/")
 
@@ -244,9 +244,10 @@ class GhostAdminAPI:
                 "paid": latest.get("paid", 0),
                 "free": latest.get("free", 0),
                 "comped": latest.get("comped", 0),
+                "gift": latest.get("gift", 0),
             }
 
-        return {"total": total, "paid": 0, "free": 0, "comped": 0}
+        return {"total": total, "paid": 0, "free": 0, "comped": 0, "gift": 0}
 
     async def get_mrr(self) -> dict[str, int]:
         """Get MRR (Monthly Recurring Revenue) data.
