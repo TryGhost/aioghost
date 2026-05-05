@@ -115,14 +115,15 @@ async def test_get_members_count(api: GhostAdminAPI):
     with aioresponses() as m:
         m.get(
             f"{API_URL}/ghost/api/admin/members/stats/count/",
-            payload={"total": 100, "data": [{"paid": 10, "free": 85, "comped": 5}]},
+            payload={"total": 100, "data": [{"paid": 10, "free": 83, "comped": 5, "gift": 2}]},
         )
         async with api:
             members = await api.get_members_count()
         assert members["total"] == 100
         assert members["paid"] == 10
-        assert members["free"] == 85
+        assert members["free"] == 83
         assert members["comped"] == 5
+        assert members["gift"] == 2
 
 
 @pytest.mark.asyncio
@@ -135,8 +136,12 @@ async def test_get_members_count_empty_history(api: GhostAdminAPI):
         )
         async with api:
             members = await api.get_members_count()
+
         assert members["total"] == 50
         assert members["paid"] == 0
+        assert members["free"] == 0
+        assert members["comped"] == 0
+        assert members["gift"] == 0
 
 
 @pytest.mark.asyncio
