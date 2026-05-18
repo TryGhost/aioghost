@@ -1,44 +1,123 @@
-name: Publish to PyPI
+name: Weekly Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  schedule:
+    # Every Monday at 9am UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  build:
+  check-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0  # Need full history for tags
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag: $LATEST_TAG"
+
+      - name: Check for changes since last tag
+        id: changes
+        run: |
+          LATEST_TAG="${{ steps.latest_tag.outputs.tag }}"
+          COMMITS=$(git rev-list ${LATEST_TAG}..HEAD --count 2>/dev/null || echo "0")
+          echo "commits=$COMMITS" >> $GITHUB_OUTPUT
+          echo "Commits since $LATEST_TAG: $COMMITS"
+          
+          if [ "$COMMITS" -gt 0 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set up Python
+        if: steps.changes.outputs.has_changes == 'true'
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.14'
 
-      - name: Install build dependencies
-        run: pip install build
+      - name: Install uv
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install dependencies
+        if: steps.changes.outputs.has_changes == 'true'
+        run: uv sync --all-extras --dev
+
+      - name: Run tests
+        if: steps.changes.outputs.has_changes == 'true'
+        id: tests
+        run: |
+          uv run pytest --cov=src/aioghost --cov-fail-under=95
+          echo "passed=true" >> $GITHUB_OUTPUT
+
+      - name: Calculate next version
+        if: steps.changes.outputs.has_changes == 'true' && steps.tests.outputs.passed == 'true'
+        id: version
+        run: |
+          LATEST_TAG="${{ steps.latest_tag.outputs.tag }}"
+          # Remove 'v' prefix
+          VERSION=${LATEST_TAG#v}
+          
+          # Split into major.minor.patch
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          
+          # Increment patch
+          PATCH=$((PATCH + 1))
+          
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Update version in pyproject.toml
+        if: steps.changes.outputs.has_changes == 'true' && steps.tests.outputs.passed == 'true'
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+          cat pyproject.toml | grep "^version"
+
+      - name: Commit and tag
+        if: steps.changes.outputs.has_changes == 'true' && steps.tests.outputs.passed == 'true'
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add pyproject.toml
+          git commit -m "Release v${NEW_VERSION}"
+          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          
+          git push origin main
+          git push origin "v${NEW_VERSION}"
 
       - name: Build package
-        run: python -m build
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: dist
-          path: dist/
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: dist
-          path: dist/
+        if: steps.changes.outputs.has_changes == 'true' && steps.tests.outputs.passed == 'true'
+        run: uv build
 
       - name: Publish to PyPI
+        if: steps.changes.outputs.has_changes == 'true' && steps.tests.outputs.passed == 'true'
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.changes.outputs.has_changes }}" != "true" ]; then
+            echo "### No Release Needed" >> $GITHUB_STEP_SUMMARY
+            echo "No changes since ${{ steps.latest_tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.tests.outputs.passed }}" == "true" ]; then
+            echo "### Released v${{ steps.version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+            echo "Published to PyPI" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Release Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "Tests failed" >> $GITHUB_STEP_SUMMARY
+          fi
