@@ -49,6 +49,8 @@ jobs:
       - name: Install uv
         if: steps.changes.outputs.has_changes == 'true'
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.11.28"
 
       - name: Check lockfile
         if: steps.changes.outputs.has_changes == 'true'
@@ -83,12 +85,13 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
 
-      - name: Update version in pyproject.toml
+      - name: Update version and lockfile
         if: steps.changes.outputs.has_changes == 'true' && steps.tests.outputs.passed == 'true'
         run: |
           NEW_VERSION="${{ steps.version.outputs.new_version }}"
           sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
-          cat pyproject.toml | grep "^version"
+          uv lock
+          uv lock --check
 
       - name: Commit and tag
         if: steps.changes.outputs.has_changes == 'true' && steps.tests.outputs.passed == 'true'
@@ -98,7 +101,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          git add pyproject.toml
+          git add pyproject.toml uv.lock
           git commit -m "Release v${NEW_VERSION}"
           git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
           
