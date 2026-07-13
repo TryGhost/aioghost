@@ -23,22 +23,36 @@ jobs:
         id: latest_tag
         shell: bash
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
 
-          if [[ ! "$LATEST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ -z "$LATEST_TAG" ]]; then
+            echo "tag=v0.0.0" >> $GITHUB_OUTPUT
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+            echo "No existing release tag"
+            exit 0
+          fi
+
+          if [[ ! "$LATEST_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Latest tag must use vMAJOR.MINOR.PATCH format: $LATEST_TAG" >&2
             exit 1
           fi
 
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "tag_exists=true" >> $GITHUB_OUTPUT
           echo "Latest tag: $LATEST_TAG"
 
       - name: Check for changes since last tag
         id: changes
         env:
           LATEST_TAG: ${{ steps.latest_tag.outputs.tag }}
+          TAG_EXISTS: ${{ steps.latest_tag.outputs.tag_exists }}
         run: |
-          COMMITS=$(git rev-list "${LATEST_TAG}..HEAD" --count 2>/dev/null || echo "0")
+          if [ "$TAG_EXISTS" = "true" ]; then
+            COMMITS=$(git rev-list "${LATEST_TAG}..HEAD" --count)
+          else
+            COMMITS=$(git rev-list HEAD --count)
+          fi
+
           echo "commits=$COMMITS" >> $GITHUB_OUTPUT
           echo "Commits since $LATEST_TAG: $COMMITS"
           
@@ -82,7 +96,7 @@ jobs:
         env:
           LATEST_TAG: ${{ steps.latest_tag.outputs.tag }}
         run: |
-          if [[ ! "$LATEST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "$LATEST_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Latest tag must use vMAJOR.MINOR.PATCH format: $LATEST_TAG" >&2
             exit 1
           fi
@@ -106,7 +120,7 @@ jobs:
         env:
           NEW_VERSION: ${{ steps.version.outputs.new_version }}
         run: |
-          if [[ ! "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "$NEW_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "New version must use MAJOR.MINOR.PATCH format: $NEW_VERSION" >&2
             exit 1
           fi
@@ -121,7 +135,7 @@ jobs:
         env:
           NEW_VERSION: ${{ steps.version.outputs.new_version }}
         run: |
-          if [[ ! "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "$NEW_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "New version must use MAJOR.MINOR.PATCH format: $NEW_VERSION" >&2
             exit 1
           fi
